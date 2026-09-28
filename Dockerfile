@@ -6,11 +6,16 @@ FROM eclipse-temurin:25-jre-alpine
 
 # Run as a non-root user. Nothing here needs root, and a container breakout is a
 # great deal less interesting from an unprivileged account.
-RUN addgroup -S stocksync && adduser -S stocksync -G stocksync
+#
+# The UID is explicit, and USER names it numerically. Kubernetes' runAsNonRoot
+# check can only reason about UIDs: given a *name* it cannot tell whether the
+# user is root, so it refuses to start the container with
+# CreateContainerConfigError rather than risk it.
+RUN addgroup -g 10001 -S stocksync && adduser -u 10001 -S stocksync -G stocksync
 
 WORKDIR /app
 COPY --chown=stocksync:stocksync target/*.jar app.jar
-USER stocksync
+USER 10001
 
 EXPOSE 8080
 

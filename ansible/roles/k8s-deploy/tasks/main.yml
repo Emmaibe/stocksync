@@ -61,20 +61,56 @@
 
 # Fails the pipeline if the new pods never become ready — which, with
 # maxUnavailable 0, means the previous version is still serving traffic.
+#
+# On failure, print what the pods say before giving up. A bare "timed out
+# waiting for the condition" sends whoever reads it off to SSH and hunt; the
+# reason is almost always in the pod status, its events, or the first lines of
+# the application log, all of which are gathered here.
 - name: Wait for rollout to complete
-  shell: |
-    kubectl rollout status deployment/{{ app_name }} -n {{ app_namespace }} --timeout=240s
-  environment:
-    KUBECONFIG: "{{ kubeconfig_path }}"
+  block:
+    - name: Wait for rollout
+      shell: |
+        kubectl rollout status deployment/{{ app_name }} -n {{ app_namespace }} --timeout=240s
+      environment:
+        KUBECONFIG: "{{ kubeconfig_path }}"
 
-- name: Show recent logs if the rollout failed
-  shell: |
-    kubectl logs -n {{ app_namespace }} -l app={{ app_name }} --tail=50 || true
-  environment:
-    KUBECONFIG: "{{ kubeconfig_path }}"
-  when: false
-  # Enable by hand when debugging a bad deploy; kept here so the command is to
-  # hand rather than remembered.
+  rescue:
+    - name: Pod status
+      shell: kubectl get pods -n {{ app_namespace }} -o wide
+      environment:
+        KUBECONFIG: "{{ kubeconfig_path }}"
+      register: failed_pods
+      changed_when: false
+
+    # Events explain the failures that happen before the app runs at all —
+    # CreateContainerConfigError, ImagePullBackOff, scheduling problems — none
+    # of which produce a single line of application log.
+    - name: Recent events
+      shell: |
+        kubectl get events -n {{ app_namespace }} --sort-by=.lastTimestamp | tail -20
+      environment:
+        KUBECONFIG: "{{ kubeconfig_path }}"
+      register: failed_events
+      changed_when: false
+
+    - name: Application logs
+      shell: |
+        kubectl logs -n {{ app_namespace }} -l app={{ app_name }} --tail=80 --all-containers=true || true
+      environment:
+        KUBECONFIG: "{{ kubeconfig_path }}"
+      register: failed_logs
+      changed_when: false
+
+    - name: Why the rollout failed
+      debug:
+        msg: >-
+          {{ ['=== PODS ==='] + failed_pods.stdout_lines
+             + ['', '=== EVENTS ==='] + failed_events.stdout_lines
+             + ['', '=== LOGS ==='] + failed_logs.stdout_lines }}
+
+    - name: Fail the deploy
+      fail:
+        msg: "Rollout did not complete — see the pods, events and logs above."
 
 - name: Show running pods
   shell: |

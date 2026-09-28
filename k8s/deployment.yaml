@@ -23,6 +23,12 @@ spec:
     spec:
       securityContext:
         runAsNonRoot: true
+        # Stated numerically and matching the image's USER. Without a UID here,
+        # runAsNonRoot can only be satisfied by an image whose USER is itself
+        # numeric — and a mismatch between the two is silent until a pod refuses
+        # to start.
+        runAsUser: 10001
+        runAsGroup: 10001
       containers:
         - name: stocksync
           image: lordibe/stocksync:latest
