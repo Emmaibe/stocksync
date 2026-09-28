@@ -1,0 +1,30 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: stocksync-config
+  namespace: stocksync
+data:
+  SPRING_PROFILES_ACTIVE: "prod"
+
+  # Pods reach PostgreSQL on the host, not in the cluster, so this is the host IP
+  # rather than localhost — localhost inside a pod is the pod. UFW must allow
+  # 5432 from the K3s pod CIDR (10.42.0.0/24) as well as the VPS subnet.
+  DB_URL: "jdbc:postgresql://207.180.243.191:5432/stocksync"
+  DB_USERNAME: "stocksync"
+  DB_POOL_MAX: "10"
+
+  # Where the links in emails point: the web app, not this API.
+  APP_BASE_URL: "https://stocksync.com.ng"
+  MAIL_FROM: "no-reply@stocksync.com.ng"
+  MAIL_FROM_NAME: "StockSync"
+  SPRING_MAIL_HOST: "smtp.gmail.com"
+  MAIL_PORT: "587"
+
+  # Browsers refuse a cross-origin call that is not listed here. An empty value
+  # blocks every browser client, which is the safe default but looks like a bug.
+  CORS_ALLOWED_ORIGINS: "https://stocksync.com.ng"
+
+  # Access tokens are not revocable before they expire, so this length is the
+  # window an attacker keeps a stolen one. Short, at the cost of more refreshes.
+  JWT_ACCESS_TTL: "15m"
+  JWT_REFRESH_TTL: "30d"

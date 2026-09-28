@@ -1,0 +1,44 @@
+# Overrides applied when SPRING_PROFILES_ACTIVE=prod.
+#
+# Everything environment-specific is already an environment variable in the base
+# file; this profile only changes behaviour that should differ in production.
+
+spring:
+  jpa:
+    show-sql: false
+  flyway:
+    # Refuse to start against a database whose applied migrations do not match
+    # this build. Better a failed rollout than a pod serving on a schema nobody
+    # can account for.
+    validate-on-migrate: true
+    # Never invent a baseline: an unmigrated production database is a mistake to
+    # surface, not to paper over.
+    baseline-on-migrate: false
+
+server:
+  # Behind the nginx ingress. Without this, every client IP in the logs and in
+  # the rate limiter is the ingress controller's, and IP-keyed limits become one
+  # shared bucket for the whole internet.
+  forward-headers-strategy: framework
+
+logging:
+  level:
+    root: WARN
+    com.lordibe.stocksync: INFO
+    # Hibernate logs every failed constraint at ERROR with a stack trace; the
+    # application already translates those into problem responses.
+    org.hibernate.engine.jdbc.spi.SqlExceptionHelper: FATAL
+
+management:
+  endpoints:
+    web:
+      exposure:
+        # Metrics stays exposed for scraping; nothing else new is opened up.
+        include: health,info,metrics
+  endpoint:
+    health:
+      # Never show component details to an unauthenticated caller in production:
+      # a health body names databases, hosts and mail servers.
+      show-details: never
+      probes:
+        enabled: true

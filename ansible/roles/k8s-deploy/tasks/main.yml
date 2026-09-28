@@ -1,0 +1,93 @@
+# Same shape as the ASCCAAU role, with two differences noted where they occur:
+# the secret template is never applied, and the rollout is verified rather than
+# assumed.
+
+- name: Create temp directory for manifests
+  file:
+    path: "/tmp/k8s-{{ app_name }}"
+    state: directory
+    mode: '0755'
+
+# secret.example.yaml is excluded deliberately. It holds placeholders, and
+# applying it would overwrite the real secret with the word "replace-me" —
+# every token invalid, no database password, in one silent step.
+- name: Copy K8s manifests to server
+  copy:
+    src: "{{ playbook_dir }}/../k8s/"
+    dest: "/tmp/k8s-{{ app_name }}/"
+
+- name: Remove the secret template so it can never be applied
+  file:
+    path: "/tmp/k8s-{{ app_name }}/secret.example.yaml"
+    state: absent
+
+# Pin the exact build rather than :latest, so a rollout deploys the image this
+# pipeline just built and a rollback names a specific tag.
+- name: Update image tag in deployment manifest
+  replace:
+    path: "/tmp/k8s-{{ app_name }}/deployment.yaml"
+    regexp: ':latest'
+    replace: ":{{ image_tag }}"
+
+- name: Create namespace if not exists
+  shell: |
+    kubectl get namespace {{ app_namespace }} 2>/dev/null || kubectl create namespace {{ app_namespace }}
+  environment:
+    KUBECONFIG: "{{ kubeconfig_path }}"
+
+# The application refuses to start without JWT_SECRET, which would show up as a
+# crash loop several minutes later. Failing here says why.
+- name: Verify the secret exists before deploying
+  shell: kubectl get secret stocksync-secrets -n {{ app_namespace }}
+  environment:
+    KUBECONFIG: "{{ kubeconfig_path }}"
+  register: secret_check
+  failed_when: secret_check.rc != 0
+  changed_when: false
+
+- name: Apply all K8s manifests
+  shell: |
+    kubectl apply -f /tmp/k8s-{{ app_name }}/ -n {{ app_namespace }}
+  environment:
+    KUBECONFIG: "{{ kubeconfig_path }}"
+
+# `apply` alone does not restart pods when only the image tag changed in a way
+# Kubernetes considers equal, so the restart is explicit.
+- name: Rollout restart deployment
+  shell: |
+    kubectl rollout restart deployment/{{ app_name }} -n {{ app_namespace }}
+  environment:
+    KUBECONFIG: "{{ kubeconfig_path }}"
+
+# Fails the pipeline if the new pods never become ready — which, with
+# maxUnavailable 0, means the previous version is still serving traffic.
+- name: Wait for rollout to complete
+  shell: |
+    kubectl rollout status deployment/{{ app_name }} -n {{ app_namespace }} --timeout=240s
+  environment:
+    KUBECONFIG: "{{ kubeconfig_path }}"
+
+- name: Show recent logs if the rollout failed
+  shell: |
+    kubectl logs -n {{ app_namespace }} -l app={{ app_name }} --tail=50 || true
+  environment:
+    KUBECONFIG: "{{ kubeconfig_path }}"
+  when: false
+  # Enable by hand when debugging a bad deploy; kept here so the command is to
+  # hand rather than remembered.
+
+- name: Show running pods
+  shell: |
+    kubectl get pods -n {{ app_namespace }}
+  environment:
+    KUBECONFIG: "{{ kubeconfig_path }}"
+  register: pods_result
+
+- name: Print pods
+  debug:
+    msg: "{{ pods_result.stdout_lines }}"
+
+- name: Clean up temp manifests
+  file:
+    path: "/tmp/k8s-{{ app_name }}"
+    state: absent

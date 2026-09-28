@@ -1,0 +1,7 @@
+app_name: stocksync
+app_namespace: stocksync
+dockerhub_user: lordibe
+docker_image: "{{ dockerhub_user }}/stocksync"
+# Change this and the two hostnames in k8s/ingress.yaml together.
+domain: api.stocksync.com.ng
+kubeconfig_path: /home/lordibe/.kube/config

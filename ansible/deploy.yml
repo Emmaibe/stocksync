@@ -1,0 +1,41 @@
+---
+# Run by Jenkins after a successful image push. Connects over SSH and applies
+# the manifests.
+
+- name: "Deploy {{ app_name }} to Kubernetes"
+  hosts: contabo
+  become: yes
+
+  pre_tasks:
+    - name: Show what is being deployed
+      debug:
+        msg:
+          - "App:       {{ app_name }}"
+          - "Namespace: {{ app_namespace }}"
+          - "Image tag: {{ image_tag }}"
+          - "Domain:    https://{{ domain }}"
+
+  roles:
+    - k8s-deploy
+
+  post_tasks:
+    - name: Check ingress
+      shell: kubectl get ingress -n {{ app_namespace }}
+      environment:
+        KUBECONFIG: "{{ kubeconfig_path }}"
+      register: ingress_result
+
+    - name: Check SSL certificate
+      shell: kubectl get certificate -n {{ app_namespace }}
+      environment:
+        KUBECONFIG: "{{ kubeconfig_path }}"
+      register: cert_result
+
+    - name: Deployment summary
+      debug:
+        msg:
+          - "========================================="
+          - "  DEPLOYMENT COMPLETE"
+          - "  URL:  https://{{ domain }}"
+          - "  SSL:  {{ cert_result.stdout }}"
+          - "========================================="

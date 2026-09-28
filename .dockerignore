@@ -1,0 +1,20 @@
+# Everything the image does not need. Without this the whole source tree and the
+# .git history are sent to the Docker daemon on every build.
+.git
+.github
+.idea
+src
+docs
+ansible
+k8s
+*.md
+.mvn
+mvnw
+mvnw.cmd
+pom.xml
+target/classes
+target/test-classes
+target/generated-sources
+target/maven-status
+target/surefire-reports
+target/failsafe-reports

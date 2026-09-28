@@ -1,0 +1,78 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: stocksync
+  namespace: stocksync
+spec:
+  replicas: 2
+  # maxUnavailable 0: the old pod keeps serving until the new one reports ready,
+  # so a deploy costs no downtime. Combined with the readiness probe below, that
+  # also means a pod whose Flyway migration is still running takes no traffic.
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: stocksync
+  template:
+    metadata:
+      labels:
+        app: stocksync
+    spec:
+      securityContext:
+        runAsNonRoot: true
+      containers:
+        - name: stocksync
+          image: lordibe/stocksync:latest
+          ports:
+            - containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: stocksync-config
+            - secretRef:
+                name: stocksync-secrets
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+
+          # Readiness gates traffic; liveness restarts a wedged pod. They point at
+          # different endpoints on purpose: a pod that cannot reach the database
+          # should stop receiving requests (not ready) but must not be restarted
+          # in a loop over an outage it cannot fix (still alive).
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: 8080
+            initialDelaySeconds: 20
+            periodSeconds: 5
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: 8080
+            initialDelaySeconds: 60
+            periodSeconds: 15
+            failureThreshold: 4
+
+          # Startup can be slow on a cold JVM with migrations to apply; this probe
+          # holds the other two off rather than forcing their delays up.
+          startupProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: 8080
+            periodSeconds: 5
+            failureThreshold: 30
+
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "250m"
+            limits:
+              memory: "1Gi"
+              cpu: "1000m"
+      # Graceful shutdown is enabled in the application; give it room to finish
+      # in-flight requests before SIGKILL.
+      terminationGracePeriodSeconds: 45

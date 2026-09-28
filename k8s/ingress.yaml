@@ -1,0 +1,28 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: stocksync-ingress
+  namespace: stocksync
+  annotations:
+    # Note: no rewrite-target here, unlike the ASCCAAU ingress. This API's paths
+    # are meaningful (/api/v1/stock/movements), so they must reach the service
+    # unchanged; a rewrite-target of "/" would send every request to the root.
+    nginx.ingress.kubernetes.io/proxy-body-size: "2m"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - api.stocksync.com.ng
+      secretName: stocksync-tls
+  rules:
+    - host: api.stocksync.com.ng
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: stocksync-service
+                port:
+                  number: 80
