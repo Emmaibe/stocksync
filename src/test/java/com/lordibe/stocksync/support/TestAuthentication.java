@@ -23,10 +23,18 @@ public final class TestAuthentication {
     }
 
     public static void as(UserRole role, UUID tenantId) {
+        as(role, tenantId, UUID.randomUUID());
+    }
+
+    /**
+     * As above, but with a known user id — needed by the rules that ask whether
+     * the caller is acting on their own account.
+     */
+    public static void as(UserRole role, UUID tenantId, UUID userId) {
         List<String> permissions = List.copyOf(role.permissionCodes());
         Jwt jwt = Jwt.withTokenValue("test-token")
                 .header("alg", "HS256")
-                .subject(UUID.randomUUID().toString())
+                .subject(userId.toString())
                 .claim(JwtClaims.TENANT_ID, tenantId.toString())
                 .claim(JwtClaims.ROLE, role.name())
                 .claim(JwtClaims.PERMISSIONS, permissions)
