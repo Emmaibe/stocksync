@@ -1,6 +1,8 @@
 spring:
   application:
     name: stocksync
+  config:
+    import: optional:file:.env[.properties]
 
   mail:
     # No host here on purpose. @ConditionalOnProperty treats an empty value as
