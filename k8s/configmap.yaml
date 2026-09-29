@@ -22,7 +22,8 @@ data:
   # before and could never have worked from production: Google is not authorised
   # to send for stocksync.com.ng, so receiving servers would reject or
   # spam-folder every invitation while the outbox reported them all as SENT.
-  SPRING_MAIL_HOST: "smtp.resend.com"
+#  SPRING_MAIL_HOST: "smtp.resend.com"
+  SPRING_MAIL_HOST: "smtp.gmail.com"
   MAIL_PORT: "587"
 
   # Browsers refuse a cross-origin call that is not listed here. An empty value
