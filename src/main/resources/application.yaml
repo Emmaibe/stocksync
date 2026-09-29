@@ -9,8 +9,11 @@ spring:
     # behaviour on a laptop and in CI — and setting SPRING_MAIL_HOST in the
     # environment turns on real delivery.
     port: ${MAIL_PORT:587}
-    username: ${MAIL_USERNAME:asccaa.uniben@gmail.com}
-    password: ${MAIL_PASSWORD:xafxkyxmzvxxtvpp}
+    # No defaults. These were real Gmail credentials, which meant anyone with the
+    # repository had a working mail account, and the person who rotated that
+    # account would break this application without knowing it existed.
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
     properties:
       mail:
         smtp:
@@ -83,6 +86,18 @@ management:
       show-details: when-authorized
       probes:
         enabled: true
+      group:
+        # Operational checks live here and NOT in the probes. A mail backlog or an
+        # unreachable SMTP server must never take pods out of the load balancer:
+        # the API can still record stock, and pulling the pods would turn a mail
+        # problem into an outage. Readiness answers "can this pod serve traffic";
+        # this group answers "is anything rotting quietly".
+        #
+        # Requires a token (see SecurityConfig) because the details name the mail
+        # server and the database.
+        ops:
+          include: db,mail,outbox
+          show-details: when-authorized
 
 logging:
   level:
@@ -110,11 +125,18 @@ stocksync:
     app-base-url: ${APP_BASE_URL:http://localhost:3000}
     dispatch-batch-size: ${MAIL_BATCH_SIZE:25}
     dispatch-interval-ms: ${MAIL_DISPATCH_INTERVAL_MS:30000}
+    # How long a message may sit unsent before the ops health check calls the
+    # queue stalled. The dispatcher runs every 30 seconds, so anything waiting
+    # this long is failing and backing off, not merely queued.
+    stalled-after-minutes: ${MAIL_STALLED_AFTER_MINUTES:15}
   security:
     jwt:
-      # No default on purpose: the app must not start with a known signing key.
+      # No default, and this time actually no default. A committed key is a
+      # known key: anyone holding it can mint a token for any tenant and any
+      # permission. Startup fails without JWT_SECRET, which is the intended
+      # behaviour — tests supply a throwaway one, production reads the secret.
       # Must be at least 32 bytes for HS256.
-      secret: ${JWT_SECRET:229845c8e1f2a7c6f08cc0aa675646b4be885a9d7bcccf3c4c375ab928faf97bfef3f896f3666626268bd990bb186e69c97d62ea27e41bf5365448ca129685af}
+      secret: ${JWT_SECRET}
       issuer: ${JWT_ISSUER:stocksync}
       access-token-ttl: ${JWT_ACCESS_TTL:15m}
       refresh-token-ttl: ${JWT_REFRESH_TTL:30d}

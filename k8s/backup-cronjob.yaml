@@ -67,6 +67,16 @@ spec:
                 # Fail rather than hang forever on an unreachable database.
                 - name: PGCONNECT_TIMEOUT
                   value: "15"
+                # Dead man's switch. The job pings this URL only after the dump
+                # has been verified, so a missing ping means "no good backup last
+                # night" and the monitoring service raises it. Optional: without
+                # it the job still runs, it just has nobody watching.
+                - name: BACKUP_PING_URL
+                  valueFrom:
+                    secretKeyRef:
+                      name: stocksync-secrets
+                      key: BACKUP_PING_URL
+                      optional: true
               command:
                 - /bin/sh
                 - -euc
@@ -96,6 +106,19 @@ spec:
 
                   echo "==> on disk now"
                   ls -lh /backups | tail -20
+
+                  # Last, and only on success. A job that fails anywhere above
+                  # never reaches this line, which is the whole point: the alert
+                  # comes from the ping NOT arriving. Nothing inside a broken
+                  # server can be trusted to report that it is broken.
+                  if [ -n "${BACKUP_PING_URL:-}" ]; then
+                    echo "==> telling the monitor this backup succeeded"
+                    curl -fsS --retry 3 --max-time 15 "$BACKUP_PING_URL" >/dev/null 2>&1 \
+                      || wget -q -T 15 -O /dev/null "$BACKUP_PING_URL" \
+                      || echo "!! could not reach the monitor (the backup itself is fine)"
+                  else
+                    echo "==> BACKUP_PING_URL is not set: nothing will notice if this job stops running"
+                  fi
               volumeMounts:
                 - name: backups
                   mountPath: /backups

@@ -52,7 +52,12 @@ public class SecurityConfig {
                                 "/api/v1/auth/register", "/api/v1/auth/invitations/accept",
                                 "/api/v1/auth/password-reset", "/api/v1/auth/password-reset/complete")
                             .permitAll()
-                        .requestMatchers("/actuator/health/**", "/actuator/info").permitAll()
+                        // Listed one by one on purpose. "/actuator/health/**" was a
+                        // standing invitation to leak the next health group somebody
+                        // adds — the ops group names the database and mail server,
+                        // and would have been public the moment it existed.
+                        .requestMatchers("/actuator/health", "/actuator/health/readiness",
+                                "/actuator/health/liveness", "/actuator/info").permitAll()
                         .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html")
                             .permitAll()
                         .anyRequest().authenticated())

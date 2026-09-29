@@ -36,4 +36,20 @@ public interface EmailMessageRepository extends JpaRepository<EmailMessage, UUID
     List<EmailMessage> findByToAddressAndStatusOrderByCreatedAtDesc(String toAddress, EmailStatus status);
 
     long countByTemplateAndStatus(String template, EmailStatus status);
+
+    long countByStatus(EmailStatus status);
+
+    /**
+     * When the oldest still-unsent message was created, or {@code null} if the
+     * queue is empty.
+     *
+     * <p>Created, not {@code nextAttemptAt}: a message backing off has its next
+     * attempt pushed into the future, so measuring from that would report a
+     * stuck queue as freshly queued — exactly backwards.
+     */
+    @Query("""
+            select min(m.createdAt) from EmailMessage m
+            where m.status = com.lordibe.stocksync.platform.email.domain.EmailStatus.PENDING
+            """)
+    OffsetDateTime oldestPendingCreatedAt();
 }

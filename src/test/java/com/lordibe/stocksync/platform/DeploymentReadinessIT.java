@@ -101,6 +101,39 @@ class DeploymentReadinessIT extends AbstractPostgresIntegrationTest {
         assertThat(response.statusCode()).isEqualTo(403);
     }
 
+    @Test
+    @DisplayName("the ops health group needs a token")
+    void opsGroupIsNotPublic() throws Exception {
+        // The probes are public because kubelet cannot present a token. This group
+        // is not a probe: its body names the database and the mail server, and it
+        // is the one actuator path most likely to be forgotten when adding checks.
+        HttpResponse<String> response = get("/actuator/health/ops");
+
+        assertThat(response.statusCode()).isEqualTo(401);
+    }
+
+    @Test
+    @DisplayName("metrics need a token")
+    void metricsAreNotPublic() throws Exception {
+        // Metric names alone describe the system's internals, and the values
+        // describe its traffic. Neither is public information.
+        HttpResponse<String> response = get("/actuator/metrics");
+
+        assertThat(response.statusCode()).isEqualTo(401);
+    }
+
+    @Test
+    @DisplayName("readiness ignores the operational checks")
+    void readinessDoesNotDependOnMailOrTheOutbox() throws Exception {
+        // The guarantee this test exists to hold: a mail outage must not make a
+        // pod unready. If the outbox check ever leaks into the readiness group,
+        // a wrong SMTP password becomes a full outage at the next rollout.
+        HttpResponse<String> response = get("/actuator/health/readiness");
+
+        assertThat(response.statusCode()).isEqualTo(200);
+        assertThat(response.body()).doesNotContain("outbox").doesNotContain("mail");
+    }
+
     private HttpResponse<String> get(String path) throws Exception {
         return http.send(HttpRequest.newBuilder(URI.create(baseUrl() + path)).GET().build(),
                 HttpResponse.BodyHandlers.ofString());
