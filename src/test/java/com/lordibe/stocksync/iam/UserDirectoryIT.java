@@ -274,6 +274,68 @@ class UserDirectoryIT extends AbstractPostgresIntegrationTest {
         assertThat(users.findById(ownerId).orElseThrow().getFullName()).isEqualTo("Ann Owner-Smith");
     }
 
+    @Test
+    @DisplayName("an admin can offboard a manager, which is the everyday case")
+    void adminCanDeactivateBelowAdmin() {
+        asOwner();
+        AppUser admin = addUser("al@acme.io", "Al Admin", UserRole.ADMIN, UserStatus.ACTIVE);
+        AppUser mo = addUser("mo@acme.io", "Mo", UserRole.MANAGER, UserStatus.ACTIVE);
+        TestAuthentication.as(UserRole.ADMIN, tenantId, admin.getId());
+
+        // Offboarding is admin work. Requiring the owner for this would mean
+        // nobody can cut off a dismissed employee while the owner is away.
+        directory.deactivate(mo.getId(), UserRole.ADMIN, admin.getId());
+
+        assertThat(users.findById(mo.getId()).orElseThrow().getStatus())
+                .isEqualTo(UserStatus.DISABLED);
+    }
+
+    @Test
+    @DisplayName("an admin cannot disable a fellow admin — that needs the owner")
+    void disablingAnAdminNeedsUserDelete() {
+        asOwner();
+        AppUser first = addUser("al@acme.io", "Al Admin", UserRole.ADMIN, UserStatus.ACTIVE);
+        AppUser second = addUser("bea@acme.io", "Bea Admin", UserRole.ADMIN, UserStatus.ACTIVE);
+        TestAuthentication.as(UserRole.ADMIN, tenantId, first.getId());
+
+        // The equal-level case the privilege rule lets through: two admins can
+        // otherwise disable each other, and a compromised admin account can lock
+        // out everyone but the owner. ADMIN holds user.update but not user.delete.
+        assertThatExceptionOfType(AccessDeniedException.class).isThrownBy(() ->
+                directory.deactivate(second.getId(), UserRole.ADMIN, first.getId()));
+
+        assertThat(users.findById(second.getId()).orElseThrow().getStatus())
+                .isEqualTo(UserStatus.ACTIVE);
+    }
+
+    @Test
+    @DisplayName("the owner can disable an admin")
+    void ownerCanDisableAnAdmin() {
+        asOwner();
+        AppUser admin = addUser("al@acme.io", "Al Admin", UserRole.ADMIN, UserStatus.ACTIVE);
+
+        directory.deactivate(admin.getId(), UserRole.OWNER, ownerId);
+
+        assertThat(users.findById(admin.getId()).orElseThrow().getStatus())
+                .isEqualTo(UserStatus.DISABLED);
+    }
+
+    @Test
+    @DisplayName("an admin cannot restore a fellow admin either")
+    void restoringAnAdminNeedsUserDeleteToo() {
+        asOwner();
+        AppUser first = addUser("al@acme.io", "Al Admin", UserRole.ADMIN, UserStatus.ACTIVE);
+        AppUser second = addUser("bea@acme.io", "Bea Admin", UserRole.ADMIN, UserStatus.ACTIVE);
+        directory.deactivate(second.getId(), UserRole.OWNER, ownerId);
+        TestAuthentication.as(UserRole.ADMIN, tenantId, first.getId());
+
+        // Symmetry matters: if an admin could reactivate an admin, the owner-only
+        // rule on disabling would be undone by the admin the owner just removed
+        // being switched back on by their colleague.
+        assertThatExceptionOfType(AccessDeniedException.class).isThrownBy(() ->
+                directory.reactivate(second.getId(), UserRole.ADMIN));
+    }
+
     /** Registers a fresh tenant, binds it, and signs in as its owner. */
     private void asOwner() {
         TokenPair tokens = onboarding.registerTenant(new RegisterTenantRequest(

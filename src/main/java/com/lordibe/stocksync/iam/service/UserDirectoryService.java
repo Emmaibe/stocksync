@@ -1,6 +1,7 @@
 package com.lordibe.stocksync.iam.service;
 
 import com.lordibe.stocksync.iam.domain.AppUser;
+import com.lordibe.stocksync.iam.domain.Permission;
 import com.lordibe.stocksync.iam.domain.UserRole;
 import com.lordibe.stocksync.iam.domain.UserStatus;
 import com.lordibe.stocksync.iam.repository.AppUserRepository;
@@ -12,6 +13,9 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -39,6 +43,15 @@ import java.util.UUID;
  * privileged than themselves, and may not act on their own role or status — the
  * first stops sideways escalation, the second stops both self-promotion and an
  * administrator locking themselves out of their own workspace.
+ *
+ * <p>Ending access is split across two permissions rather than one.
+ * {@code user.update} is enough to disable a manager or a staff member, because
+ * offboarding is an administrator's job in practice and making it owner-only
+ * means nobody can cut off a dismissed employee while the owner is away —
+ * failing in exactly the situation the restriction exists for. Disabling another
+ * <em>administrator</em> additionally needs {@code user.delete}, which only an
+ * owner holds: that is the act that could lock a business out of its own
+ * workspace, and it is rare enough to wait for the owner.
  */
 @Slf4j
 @Service
@@ -145,6 +158,7 @@ public class UserDirectoryService {
             // OWNER and take the workspace.
             throw new AccessDeniedException("You cannot deactivate someone with more access than you");
         }
+        requireOwnerToTouchAnAdmin(target, "deactivate");
         if (target.getStatus() == UserStatus.DISABLED) {
             return target;
         }
@@ -173,6 +187,10 @@ public class UserDirectoryService {
         if (target.getRole().ordinal() < callerRole.ordinal()) {
             throw new AccessDeniedException("You cannot reactivate someone with more access than you");
         }
+        // Symmetrical with deactivation on purpose: restoring an administrator's
+        // access is granting access at administrator level, so it belongs to
+        // whoever is allowed to take it away.
+        requireOwnerToTouchAnAdmin(target, "reactivate");
 
         if (target.getStatus() == UserStatus.ACTIVE) {
             return target;
@@ -184,6 +202,35 @@ public class UserDirectoryService {
         target.setStatus(UserStatus.ACTIVE);
         log.info("User {} reactivated", userId);
         return target;
+    }
+
+    /**
+     * Ending or restoring an administrator's access needs {@code user.delete},
+     * which only an owner holds.
+     *
+     * <p>Checked against the caller's granted permissions rather than their role,
+     * like every other rule here, so per-tenant custom roles later change only
+     * which permissions a role carries and not this code.
+     *
+     * <p>An owner target is already refused above for any caller below owner, and
+     * the last-owner rule covers an owner acting on an owner; including owner in
+     * this check simply means the reasoning does not depend on that ordering.
+     */
+    private void requireOwnerToTouchAnAdmin(AppUser target, String verb) {
+        if (target.getRole().ordinal() <= UserRole.ADMIN.ordinal()
+                && !callerHas(Permission.USER_DELETE)) {
+            throw new AccessDeniedException("Only an owner can " + verb + " an administrator");
+        }
+    }
+
+    private boolean callerHas(Permission permission) {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null) {
+            return false;
+        }
+        return authentication.getAuthorities().stream()
+                .map(GrantedAuthority::getAuthority)
+                .anyMatch(permission.code()::equals);
     }
 
     /**
