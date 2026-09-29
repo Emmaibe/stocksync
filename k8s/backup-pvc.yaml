@@ -1,0 +1,15 @@
+# Where dumps land. K3s ships the local-path provisioner, so this becomes a
+# directory on the VPS's own disk — which means it survives a bad migration, an
+# accidental DELETE and a dropped table, but NOT the loss of the server. The
+# off-site copy is the second half of the job; see RESTORE.md.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: stocksync-backups
+  namespace: stocksync
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi

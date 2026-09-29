@@ -1,0 +1,116 @@
+# Nightly logical backup of the stocksync database.
+#
+# Three things happen per run, in this order, and the job fails loudly if any of
+# them does:
+#
+#   1. pg_dump -Fc   — custom format: compressed, and pg_restore can read a
+#                      single table out of it without replaying the whole file.
+#   2. pg_restore -l — reads the archive's table of contents back. A dump that
+#                      was truncated by a full disk or a dropped connection
+#                      still looks like a file; it does not survive this. An
+#                      unverified backup is not a backup.
+#   3. prune         — dumps older than RETAIN_DAYS are removed, but only after
+#                      step 2 passed, so a failing night never deletes the last
+#                      good copy.
+#
+# The image is pinned to postgres:16 to match the server's major version.
+# pg_dump refuses to dump from a server newer than itself, so this pin must be
+# raised before the database is upgraded, not after.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: stocksync-backup
+  namespace: stocksync
+spec:
+  # 02:15 UTC — nothing else is scheduled then, and the odd minute keeps it off
+  # the top of the hour where every other cron in the world starts.
+  schedule: "15 2 * * *"
+  timeZone: "Etc/UTC"
+  concurrencyPolicy: Forbid
+  # If the node was down at 02:15, run late rather than skipping the night.
+  startingDeadlineSeconds: 3600
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 7
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      # Don't let a hung network connection hold the job open until tomorrow.
+      activeDeadlineSeconds: 3600
+      template:
+        spec:
+          restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            runAsGroup: 10001
+            fsGroup: 10001
+          containers:
+            - name: pg-dump
+              image: postgres:16-alpine
+              imagePullPolicy: IfNotPresent
+              env:
+                - name: PGHOST
+                  value: "207.180.243.191"
+                - name: PGPORT
+                  value: "5432"
+                - name: PGDATABASE
+                  value: "stocksync"
+                - name: PGUSER
+                  value: "stocksync"
+                - name: PGPASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: stocksync-secrets
+                      key: DB_PASSWORD
+                - name: RETAIN_DAYS
+                  value: "14"
+                # Fail rather than hang forever on an unreachable database.
+                - name: PGCONNECT_TIMEOUT
+                  value: "15"
+              command:
+                - /bin/sh
+                - -euc
+                - |
+                  STAMP=$(date -u +%Y%m%dT%H%M%SZ)
+                  OUT=/backups/stocksync-$STAMP.dump
+                  echo "==> dumping to $OUT"
+                  pg_dump -Fc --no-owner --no-privileges -f "$OUT.part"
+                  mv "$OUT.part" "$OUT"
+
+                  echo "==> verifying archive"
+                  TABLES=$(pg_restore -l "$OUT" | grep -c 'TABLE DATA' || true)
+                  echo "    $TABLES tables with data"
+                  # Seven tables shipped in V1 and the count only grows, so a
+                  # dump with fewer than five is pointing at the wrong database
+                  # or was cut short, whatever pg_dump's exit code said.
+                  if [ "$TABLES" -lt 5 ]; then
+                    echo "!! archive has $TABLES data sections — refusing to treat this as a backup"
+                    exit 1
+                  fi
+                  echo "    size: $(du -h "$OUT" | cut -f1)"
+
+                  echo "==> pruning dumps older than $RETAIN_DAYS days"
+                  find /backups -name 'stocksync-*.dump' -type f -mtime "+$RETAIN_DAYS" -print -delete
+                  # Half-written files from a killed run would otherwise sit there forever.
+                  find /backups -name '*.part' -type f -mtime +1 -print -delete
+
+                  echo "==> on disk now"
+                  ls -lh /backups | tail -20
+              volumeMounts:
+                - name: backups
+                  mountPath: /backups
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 128Mi
+                limits:
+                  memory: 512Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+          volumes:
+            - name: backups
+              persistentVolumeClaim:
+                claimName: stocksync-backups
