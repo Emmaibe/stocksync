@@ -131,7 +131,7 @@ class DeploymentReadinessIT extends AbstractPostgresIntegrationTest {
         HttpResponse<String> response = get("/actuator/health/readiness");
 
         assertThat(response.statusCode()).isEqualTo(200);
-        assertThat(response.body()).doesNotContain("outbox").doesNotContain("mail");
+        assertThat(response.body()).doesNotContain("outbox");
     }
 
     private HttpResponse<String> get(String path) throws Exception {

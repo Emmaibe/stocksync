@@ -71,13 +71,19 @@ curl -sS https://api.stocksync.com.ng/actuator/health/ops \
   -H "Authorization: Bearer $TOKEN"
 ```
 
-It reports three components:
+It reports two components:
 
 | Component | What it tells you |
 |---|---|
 | `db` | The connection pool can reach PostgreSQL |
-| `mail` | The SMTP server accepts a connection, using the real credentials |
 | `outbox` | Queued mail is actually draining |
+
+Spring Boot's own `mail` check is not in this group on purpose. It only exists
+when `spring.mail.host` is set, and that is deliberately unset on a laptop and
+in CI, so including it would mean the application starts in production and
+refuses to start everywhere else. The `outbox` check covers the same ground from
+the other end: if SMTP is refusing the credentials, messages stop draining and
+this reports it.
 
 The `outbox` check goes DOWN if any message has been abandoned after its attempt
 limit, or if the oldest waiting message is older than 15 minutes. The dispatcher

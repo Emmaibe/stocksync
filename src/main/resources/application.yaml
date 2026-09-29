@@ -95,8 +95,15 @@ management:
         #
         # Requires a token (see SecurityConfig) because the details name the mail
         # server and the database.
+        #
+        # 'mail' is deliberately NOT a member. Boot validates group membership at
+        # startup, and the mail contributor only exists when spring.mail.host is
+        # set — which it is not on a laptop or in CI, by design. Listing it would
+        # mean the application starts in production and refuses to start
+        # everywhere else. SMTP trouble shows up through 'outbox' anyway, which
+        # is the symptom that actually matters.
         ops:
-          include: db,mail,outbox
+          include: db,outbox
           show-details: when-authorized
 
 logging:
