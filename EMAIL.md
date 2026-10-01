@@ -60,16 +60,41 @@ and later `p=reject` stop others from spoofing it.
 The username is the literal word `resend` for every account. The password is an
 API key from Resend's dashboard.
 
+Give the key **Sending access** and scope it to `stocksync.com.ng`. A full-access
+key can also create and delete API keys, add and remove domains, and read every
+message you have sent — including the invitation and reset links inside them.
+This one only hands messages over, and it lives on a VPS.
+
 ```bash
-kubectl create secret generic stocksync-secrets -n stocksync \
-  --from-literal=MAIL_USERNAME='resend' \
-  --from-literal=MAIL_PASSWORD='re_...' \
-  --dry-run=client -o yaml | kubectl apply -f -
+kubectl patch secret stocksync-secrets -n stocksync -p '{"stringData":{
+  "MAIL_USERNAME": "resend",
+  "MAIL_PASSWORD": "re_..."
+}}'
 ```
 
-That form merges rather than replaces, so `JWT_SECRET` and `DB_PASSWORD` survive.
-Replacing the secret outright would sign every user out and stop the pods
-starting.
+**Use `patch`, not `apply`.** `patch` changes the named keys and leaves the rest
+of the secret alone, which matters because `JWT_SECRET` and `DB_PASSWORD` live in
+the same object: losing the first signs every user out at once, and losing the
+second stops the pods starting.
+
+`kubectl apply` of a small manifest looks like it does the same thing and mostly
+does, but it decides what to delete by comparing against a
+`last-applied-configuration` annotation it stores on the resource. This secret
+was created by hand, so that annotation did not exist and nothing was deleted —
+but applying also *writes* the annotation, listing only the keys in that
+manifest. From then on, an `apply` of a different partial manifest can delete the
+keys the earlier one did not mention. `patch` never writes that annotation and
+has no such trap.
+
+Check what survived before restarting anything. It prints key names, not values:
+
+```bash
+kubectl get secret stocksync-secrets -n stocksync \
+  -o go-template='{{range $k,$v := .data}}{{$k}}{{"\n"}}{{end}}'
+```
+
+Four names expected: `JWT_SECRET`, `DB_PASSWORD`, `MAIL_USERNAME`,
+`MAIL_PASSWORD`.
 
 Then restart so the pods pick it up:
 

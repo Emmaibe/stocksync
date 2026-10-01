@@ -17,13 +17,13 @@ data:
   APP_BASE_URL: "https://stocksync.com.ng"
   MAIL_FROM: "no-reply@stocksync.com.ng"
   MAIL_FROM_NAME: "StockSync"
-  # Resend. The username is the literal word "resend" for every account and the
+  # Resend. The username is the literal word "resend" for every account, and the
   # password is an API key, both of which live in the secret. Gmail was here
   # before and could never have worked from production: Google is not authorised
   # to send for stocksync.com.ng, so receiving servers would reject or
   # spam-folder every invitation while the outbox reported them all as SENT.
-#  SPRING_MAIL_HOST: "smtp.resend.com"
-  SPRING_MAIL_HOST: "smtp.gmail.com"
+  SPRING_MAIL_HOST: "smtp.resend.com"
+#  SPRING_MAIL_HOST: "smtp.gmail.com"
   MAIL_PORT: "587"
 
   # Browsers refuse a cross-origin call that is not listed here. An empty value
