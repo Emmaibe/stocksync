@@ -56,7 +56,12 @@ public class ApiExceptionHandler {
         problem.setTitle("Insufficient stock");
         problem.setProperty("itemId", exception.getItemId());
         problem.setProperty("locationId", exception.getLocationId());
-        problem.setProperty("onHand", exception.getOnHand());
+        // The ids and numbers live here, as structured properties, rather than in
+        // the sentence: a client that wants to highlight a field or re-fetch a
+        // level can read them, and the person reading `detail` is not shown a
+        // UUID. Named "available" rather than "onHand" because for a refused
+        // reservation it is what was free, which is not the same number.
+        problem.setProperty("available", exception.getAvailable());
         problem.setProperty("requested", exception.getRequested());
         return problem;
     }
