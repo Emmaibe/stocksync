@@ -2,7 +2,10 @@ package com.lordibe.stocksync.stocktake;
 
 import com.lordibe.stocksync.catalog.domain.Item;
 import com.lordibe.stocksync.catalog.repository.ItemRepository;
+import com.lordibe.stocksync.iam.domain.AppUser;
 import com.lordibe.stocksync.iam.domain.UserRole;
+import com.lordibe.stocksync.iam.domain.UserStatus;
+import com.lordibe.stocksync.iam.repository.AppUserRepository;
 import com.lordibe.stocksync.inventory.domain.MovementType;
 import com.lordibe.stocksync.inventory.domain.RecordMovementCommand;
 import com.lordibe.stocksync.inventory.domain.StockMovementService;
@@ -53,11 +56,14 @@ class StocktakeIT extends AbstractPostgresIntegrationTest {
     @Autowired ItemRepository items;
     @Autowired LocationRepository locations;
     @Autowired TenantRepository tenants;
+    @Autowired AppUserRepository users;
 
     private UUID tenantId;
     private UUID widgetId;
     private UUID gadgetId;
     private UUID warehouseId;
+    /** The person doing the counting. Every posted count names one. */
+    private UUID counterId;
 
     @BeforeEach
     void seed() {
@@ -66,6 +72,11 @@ class StocktakeIT extends AbstractPostgresIntegrationTest {
                 .status(TenantStatus.ACTIVE).plan(TenantPlan.FREE).build()).getId();
         TenantContext.set(tenantId);
         TestAuthentication.as(UserRole.OWNER, tenantId);
+
+        counterId = users.save(AppUser.builder()
+                .tenantId(tenantId).email("ann-" + UUID.randomUUID() + "@acme.test")
+                .passwordHash("not-a-real-hash").fullName("Ann Counter")
+                .role(UserRole.OWNER).status(UserStatus.ACTIVE).build()).getId();
 
         widgetId = newItem("Widget");
         gadgetId = newItem("Gadget");
@@ -100,7 +111,7 @@ class StocktakeIT extends AbstractPostgresIntegrationTest {
         StockCount count = stocktake.open(warehouseId, "CYCLE-1", null, null);
 
         stocktake.enterCount(count.getId(), widgetId, new BigDecimal("97"), "three broken");
-        stocktake.post(count.getId(), null);
+        stocktake.post(count.getId(), counterId);
 
         assertThat(movements.onHand(widgetId, warehouseId)).isEqualByComparingTo("97");
         assertThat(line(count, widgetId).getMovementId()).isNotNull();
@@ -117,7 +128,7 @@ class StocktakeIT extends AbstractPostgresIntegrationTest {
         StockCount count = stocktake.open(warehouseId, null, null, null);
 
         stocktake.enterCount(count.getId(), widgetId, new BigDecimal("12"), "found behind the rack");
-        stocktake.post(count.getId(), null);
+        stocktake.post(count.getId(), counterId);
 
         assertThat(movements.onHand(widgetId, warehouseId)).isEqualByComparingTo("12");
     }
@@ -133,7 +144,7 @@ class StocktakeIT extends AbstractPostgresIntegrationTest {
         // posting a half-finished sheet would empty the warehouse — the single
         // most destructive thing this feature could do.
         stocktake.enterCount(count.getId(), widgetId, new BigDecimal("98"), null);
-        stocktake.post(count.getId(), null);
+        stocktake.post(count.getId(), counterId);
 
         assertThat(movements.onHand(widgetId, warehouseId)).isEqualByComparingTo("98");
         assertThat(movements.onHand(gadgetId, warehouseId)).isEqualByComparingTo("5");
@@ -147,7 +158,7 @@ class StocktakeIT extends AbstractPostgresIntegrationTest {
         StockCount count = stocktake.open(warehouseId, null, null, null);
 
         stocktake.enterCount(count.getId(), widgetId, BigDecimal.ZERO, "none left");
-        stocktake.post(count.getId(), null);
+        stocktake.post(count.getId(), counterId);
 
         assertThat(movements.onHand(widgetId, warehouseId)).isEqualByComparingTo("0");
     }
@@ -164,7 +175,7 @@ class StocktakeIT extends AbstractPostgresIntegrationTest {
         movements.record(new RecordMovementCommand(widgetId, warehouseId, MovementType.SALE,
                 new BigDecimal("-10"), null, null, null, OffsetDateTime.now(), "sale-mid", null));
 
-        stocktake.post(count.getId(), null);
+        stocktake.post(count.getId(), counterId);
 
         // Measuring against the sheet would have adjusted by zero and left 90,
         // or worse, restored the 10. Measuring against stock as it is now sets
@@ -184,7 +195,7 @@ class StocktakeIT extends AbstractPostgresIntegrationTest {
         long before = movementRepository.count();
 
         stocktake.enterCount(count.getId(), widgetId, new BigDecimal("42"), null);
-        stocktake.post(count.getId(), null);
+        stocktake.post(count.getId(), counterId);
 
         assertThat(movementRepository.count()).isEqualTo(before);
         assertThat(line(count, widgetId).getMovementId()).isNull();
@@ -196,10 +207,10 @@ class StocktakeIT extends AbstractPostgresIntegrationTest {
         receive(widgetId, "10");
         StockCount count = stocktake.open(warehouseId, null, null, null);
         stocktake.enterCount(count.getId(), widgetId, new BigDecimal("9"), null);
-        stocktake.post(count.getId(), null);
+        stocktake.post(count.getId(), counterId);
 
         assertThatExceptionOfType(ConflictException.class).isThrownBy(() ->
-                stocktake.post(count.getId(), null));
+                stocktake.post(count.getId(), counterId));
         assertThatExceptionOfType(ConflictException.class).isThrownBy(() ->
                 stocktake.enterCount(count.getId(), widgetId, new BigDecimal("8"), null));
         assertThat(movements.onHand(widgetId, warehouseId)).isEqualByComparingTo("9");
@@ -239,7 +250,7 @@ class StocktakeIT extends AbstractPostgresIntegrationTest {
 
         stocktake.addLine(count.getId(), gadgetId);
         stocktake.enterCount(count.getId(), gadgetId, new BigDecimal("6"), "no record of these");
-        stocktake.post(count.getId(), null);
+        stocktake.post(count.getId(), counterId);
 
         assertThat(movements.onHand(gadgetId, warehouseId)).isEqualByComparingTo("6");
     }
@@ -255,10 +266,10 @@ class StocktakeIT extends AbstractPostgresIntegrationTest {
         // The whole point of the separation: whoever counted does not get to
         // approve the correction their own count produced.
         assertThatExceptionOfType(AccessDeniedException.class).isThrownBy(() ->
-                stocktake.post(count.getId(), null));
+                stocktake.post(count.getId(), counterId));
 
         TestAuthentication.as(UserRole.MANAGER, tenantId);
-        stocktake.post(count.getId(), null);
+        stocktake.post(count.getId(), counterId);
         assertThat(movements.onHand(widgetId, warehouseId)).isEqualByComparingTo("8");
     }
 

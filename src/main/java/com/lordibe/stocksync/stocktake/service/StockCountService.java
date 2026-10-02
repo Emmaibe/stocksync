@@ -176,6 +176,11 @@ public class StockCountService {
     @Transactional
     public StockCount post(UUID countId, UUID postedBy) {
         UUID tenantId = TenantContext.require();
+        if (postedBy == null) {
+            // A posted count is an adjustment to someone's stock figures, so the
+            // record of who approved it is part of the feature, not decoration.
+            throw new IllegalArgumentException("Posting a count must record who posted it.");
+        }
         StockCount count = requireOpen(countId);
 
         int corrected = 0;
