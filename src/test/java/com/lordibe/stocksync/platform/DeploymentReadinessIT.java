@@ -134,6 +134,25 @@ class DeploymentReadinessIT extends AbstractPostgresIntegrationTest {
         assertThat(response.body()).doesNotContain("outbox");
     }
 
+    @Test
+    @DisplayName("the API documentation is not published in production")
+    void swaggerIsClosedInProduction() throws Exception {
+        // Swagger describes every endpoint, every field and every validation rule
+        // in one page. Useful while building, and a free map of the system to
+        // anyone who finds the host.
+        assertThat(get("/swagger-ui.html").statusCode()).isNotEqualTo(200);
+        assertThat(get("/v3/api-docs").statusCode()).isNotEqualTo(200);
+    }
+
+    @Test
+    @DisplayName("closing the documentation also closes its paths to anonymous callers")
+    void documentationPathsAreNotLeftPublic() throws Exception {
+        // The two used to be separate: the UI could be switched off while its
+        // paths stayed on the public list, so the next build that served them
+        // again would have published them without anyone deciding to.
+        assertThat(get("/v3/api-docs/swagger-config").statusCode()).isIn(401, 404);
+    }
+
     private HttpResponse<String> get(String path) throws Exception {
         return http.send(HttpRequest.newBuilder(URI.create(baseUrl() + path)).GET().build(),
                 HttpResponse.BodyHandlers.ofString());

@@ -15,6 +15,15 @@ spring:
     # surface, not to paper over.
     baseline-on-migrate: false
 
+# The API documentation is for building against the API, not for publishing the
+# whole surface of it to anyone who finds the host. Turning the UI off also
+# closes its paths in SecurityConfig, which reads this same property.
+springdoc:
+  api-docs:
+    enabled: false
+  swagger-ui:
+    enabled: false
+
 server:
   # Behind the nginx ingress. Without this, every client IP in the logs and in
   # the rate limiter is the ingress controller's, and IP-keyed limits become one

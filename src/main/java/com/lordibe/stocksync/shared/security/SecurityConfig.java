@@ -2,6 +2,7 @@ package com.lordibe.stocksync.shared.security;
 
 import com.lordibe.stocksync.platform.idempotency.web.IdempotencyFilter;
 import com.lordibe.stocksync.shared.tenancy.TenancyProperties;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
@@ -36,7 +37,8 @@ public class SecurityConfig {
                                     ProblemAuthenticationEntryPoint entryPoint,
                                     ProblemAccessDeniedHandler accessDeniedHandler,
                                     IdempotencyFilter idempotencyFilter,
-                                    CorsConfigurationSource corsConfigurationSource)
+                                    CorsConfigurationSource corsConfigurationSource,
+                                    @Value("${springdoc.swagger-ui.enabled:true}") boolean apiDocsPublished)
             throws Exception {
         return http
                 // Without this a browser client is blocked before it can send a
@@ -45,7 +47,16 @@ public class SecurityConfig {
                 .csrf(csrf -> csrf.disable())
                 .sessionManagement(session ->
                         session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-                .authorizeHttpRequests(requests -> requests
+                .authorizeHttpRequests(requests -> {
+                    // Reachable without a token only where the documentation is
+                    // published at all, which production turns off. One switch
+                    // governs both, so the paths cannot be left open by a build
+                    // that no longer serves them.
+                    if (apiDocsPublished) {
+                        requests.requestMatchers("/v3/api-docs/**", "/swagger-ui/**",
+                                "/swagger-ui.html").permitAll();
+                    }
+                    requests
                         // Only these two are reachable without a token; /logout
                         // needs one, since it acts on the caller's own account.
                         .requestMatchers("/api/v1/auth/login", "/api/v1/auth/refresh",
@@ -58,9 +69,8 @@ public class SecurityConfig {
                         // and would have been public the moment it existed.
                         .requestMatchers("/actuator/health", "/actuator/health/readiness",
                                 "/actuator/health/liveness", "/actuator/info").permitAll()
-                        .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html")
-                            .permitAll()
-                        .anyRequest().authenticated())
+                        .anyRequest().authenticated();
+                })
                 .oauth2ResourceServer(oauth2 -> oauth2
                         .jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter())))
                 .exceptionHandling(handling -> handling
