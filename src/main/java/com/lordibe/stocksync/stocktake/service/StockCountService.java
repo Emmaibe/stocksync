@@ -85,9 +85,14 @@ public class StockCountService {
                 .openedBy(openedBy)
                 .build());
 
+        // The explicit type argument is not decoration. @SuperBuilder declares
+        // build() on a generic abstract builder, so inside a stream the element
+        // type infers as a wildcard capture rather than StockCountLine. It works
+        // when passed straight to save(), which has its own type variable, and
+        // fails here.
         List<StockCountLine> sheet = levels.findByTenantIdAndLocationId(tenantId, locationId)
                 .stream()
-                .map(level -> StockCountLine.builder()
+                .<StockCountLine>map(level -> StockCountLine.builder()
                         .tenantId(tenantId)
                         .stockCountId(count.getId())
                         .itemId(level.getItemId())
