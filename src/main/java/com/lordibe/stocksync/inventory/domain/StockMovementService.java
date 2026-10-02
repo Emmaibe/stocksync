@@ -191,7 +191,7 @@ public class StockMovementService {
         try {
             level.reserve(quantity);
         } catch (IllegalStateException notEnough) {
-            throw new InsufficientStockException(itemId, locationId,
+            throw InsufficientStockException.cannotReserve(itemId, locationId,
                     level.availableQuantity(), quantity);
         }
         return level;
@@ -243,7 +243,7 @@ public class StockMovementService {
             return;
         }
         if (level.getQuantityOnHand().add(delta).signum() < 0) {
-            throw new InsufficientStockException(
+            throw InsufficientStockException.cannotRemove(
                     level.getItemId(), level.getLocationId(), level.getQuantityOnHand(), delta);
         }
     }
