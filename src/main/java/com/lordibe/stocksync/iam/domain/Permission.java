@@ -27,6 +27,17 @@ public enum Permission {
     /** Recomputing a projection from the ledger — an administrative repair. */
     STOCK_REBUILD("stock.rebuild"),
 
+    /** Open a count and enter what was found on the shelf. */
+    STOCK_COUNT("stock.count"),
+    /**
+     * Turn a finished count into stock corrections.
+     *
+     * <p>Separate from {@link #STOCK_COUNT} on purpose: the person who counted
+     * does not approve their own adjustment. It is the one control that makes a
+     * stocktake evidence rather than an assertion.
+     */
+    STOCK_COUNT_POST("stock.count.post"),
+
     ITEM_READ("item.read"),
     ITEM_CREATE("item.create"),
     ITEM_UPDATE("item.update"),

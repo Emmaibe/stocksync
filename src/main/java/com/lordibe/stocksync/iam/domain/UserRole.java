@@ -28,11 +28,14 @@ public enum UserRole {
             Permission.STOCK_READ,
             Permission.STOCK_RECORD,
             Permission.ITEM_READ,
-            Permission.LOCATION_READ);
+            Permission.LOCATION_READ,
+            // Counting is floor work; approving the correction is not.
+            Permission.STOCK_COUNT);
 
     private static final Set<Permission> MANAGER_PERMISSIONS = union(STAFF_PERMISSIONS, EnumSet.of(
             Permission.STOCK_TRANSFER,
             Permission.STOCK_RESERVE,
+            Permission.STOCK_COUNT_POST,
             Permission.ITEM_CREATE,
             Permission.ITEM_UPDATE,
             Permission.LOCATION_CREATE,
